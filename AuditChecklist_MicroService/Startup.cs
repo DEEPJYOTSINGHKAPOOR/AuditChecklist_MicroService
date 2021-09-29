@@ -1,4 +1,3 @@
-using AuditChecklist_MicroService.Data;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 
@@ -21,6 +20,11 @@ using AuditChecklist_MicroService.Provider;
 using System.Reflection;
 using System.IO;
 using AuditChecklist_MicroService.Services;
+using Microsoft.Extensions.Options;
+using Swashbuckle.AspNetCore.SwaggerGen;
+using AuditSeverity_MicroService;
+using Microsoft.AspNetCore.Mvc.ApiExplorer;
+using AuditBenchmark_MicroService.Logger;
 
 namespace AuditChecklist_MicroService
 {
@@ -50,33 +54,32 @@ namespace AuditChecklist_MicroService
 
             services.AddHttpClient();
 
-
-
-
-
             services.AddAutoMapper(typeof(AuditChecklistMappings));
-            services.AddSwaggerGen(options => {
-                options.SwaggerDoc("AuditCheckListOpenApiSpec",
-                    new Microsoft.OpenApi.Models.OpenApiInfo()
-                    {
-                        Title = "AuditCheckList Api",
-                        Version = "1",
-                        Description = "Audit Checklist will be triggered from Web APP"
-
-                    }
-                    );
-                var xmlCommentsFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
-                var cmlCommentsFullPath = Path.Combine(AppContext.BaseDirectory, xmlCommentsFile);
-
-                options.IncludeXmlComments(cmlCommentsFullPath);
-            });
+ 
 
             services.AddControllers();
+
+            services.AddSingleton<ILoggerManager, LoggerManager>();
+
+            services.AddCors();
+
+            services.AddApiVersioning(options =>
+            {
+                options.AssumeDefaultVersionWhenUnspecified = true;
+                options.DefaultApiVersion = new ApiVersion(1, 0);
+                options.ReportApiVersions = true;
+            });
+            services.AddVersionedApiExplorer(options => options.GroupNameFormat = "'v'VVV");
+
+            //SWAGGER DOCUMENTATION
+            services.AddTransient<IConfigureOptions<SwaggerGenOptions>, ConfigureSwaggerOptions>();
+            services.AddSwaggerGen();
+
 
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env, ILoggerFactory loggerFactory, IApiVersionDescriptionProvider provider)
         {
             if (env.IsDevelopment())
             {
@@ -85,13 +88,27 @@ namespace AuditChecklist_MicroService
 
             app.UseHttpsRedirection();
 
+
+            app.UseRouting();
+
             app.UseSwagger();
+            //app.UseSwaggerUI(options => {
+            //    options.SwaggerEndpoint("/swagger/AuditSeverityOpenApiSpec/swagger.json", "AuditSeverityApi");
+            //    options.RoutePrefix = "";
+            //});
+
             app.UseSwaggerUI(options => {
-                options.SwaggerEndpoint("/swagger/AuditCheckListOpenApiSpec/swagger.json", "AuditCheckListOpenApiSpec");
+                foreach (var desc in provider.ApiVersionDescriptions)
+                    options.SwaggerEndpoint($"/swagger/{desc.GroupName}/swagger.json",
+                        desc.GroupName.ToUpperInvariant());
+                //options.SwaggerEndpoint("/swagger/AuthorizationOpenApiSpec/swagger.json", "Authorization Api");
                 options.RoutePrefix = "";
             });
 
-            app.UseRouting();
+            app.UseCors(x => x
+       .AllowAnyOrigin()
+       .AllowAnyMethod()
+       );
 
             app.UseAuthorization();
 
